@@ -1,0 +1,688 @@
+openapi: 3.1.0
+info:
+  title: Tracker API
+  version: 1.0.0
+  description: |
+    Контракт REST API личного трекера задач (хакатон, MVP, 4 дня).
+    Пervичный источник истины: этот файл. Любое изменение кода без изменения
+    спецификации считается нарушением контракта (см. AGENTS.md раздел 5).
+
+    Соглашения: snake_case в телах, время в RFC3339 (ответы всегда UTC),
+    идентификация по HttpOnly cookie tracker_session (JWT HS256).
+    CORS не используется: статику отдаёт тот же Go-процесс.
+servers:
+  - url: http://localhost:8080
+    description: Локальная разработка и демо
+tags:
+  - name: auth
+  - name: tasks
+  - name: reminders
+  - name: notifications
+  - name: push
+  - name: analytics
+  - name: system
+
+paths:
+  /api/auth/register:
+    post:
+      tags: [auth]
+      summary: Регистрация пользователя
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterInput' }
+      responses:
+        '201':
+          description: Пользователь создан, сессия установлена
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: 'tracker_session=<jwt>; HttpOnly; SameSite=Lax; Path=/'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Вход
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginInput' }
+      responses:
+        '200':
+          description: Успешный вход
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Выход
+      operationId: logout
+      responses:
+        '204': { description: Сессия сброшена }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: Текущий пользователь
+      operationId: me
+      responses:
+        '200':
+          description: Текущий пользователь
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/tasks:
+    get:
+      tags: [tasks]
+      summary: Список задач с фильтрами, поиском, сортировкой и пагинацией
+      operationId: listTasks
+      parameters:
+        - { name: status,   in: query, schema: { $ref: '#/components/schemas/Status' } }
+        - { name: priority, in: query, schema: { $ref: '#/components/schemas/Priority' } }
+        - { name: search,   in: query, schema: { type: string, maxLength: 200 },
+            description: Подстрочный поиск по названию (ILIKE) }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [due_at, created_at, priority], default: due_at }
+        - name: dir
+          in: query
+          schema: { type: string, enum: [asc, desc], default: asc }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: Список задач
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskList' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [tasks]
+      summary: Создать задачу
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskCreateInput' }
+      responses:
+        '201':
+          description: Задача создана
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/tasks/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/TaskId' }
+    get:
+      tags: [tasks]
+      summary: Деталь задачи вместе с напоминаниями
+      operationId: getTask
+      responses:
+        '200':
+          description: Задача
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Task' }
+                  - type: object
+                    properties:
+                      reminders:
+                        type: array
+                        items: { $ref: '#/components/schemas/Reminder' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [tasks]
+      summary: Частичное обновление задачи
+      operationId: updateTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskPatchInput' }
+      responses:
+        '200':
+          description: Обновлённая задача
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [tasks]
+      summary: Удалить задачу (напоминания удаляются каскадно)
+      operationId: deleteTask
+      responses:
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/tasks/{id}/status:
+    parameters:
+      - { $ref: '#/components/parameters/TaskId' }
+    put:
+      tags: [tasks]
+      summary: Сменить статус
+      description: |
+        Используется drag-and-drop и выпадающим списком на карточке.
+        Побочный эффект: при переходе в done все pending-напоминания задачи
+        переходят в expired в той же транзакции.
+      operationId: changeStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: '#/components/schemas/Status' }
+      responses:
+        '200':
+          description: Обновлённая задача
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/tasks/{id}/reminders:
+    parameters:
+      - { $ref: '#/components/parameters/TaskId' }
+    get:
+      tags: [reminders]
+      summary: Напоминания задачи
+      operationId: listReminders
+      responses:
+        '200':
+          description: Список напоминаний
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Reminder' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [reminders]
+      summary: Создать напоминание
+      description: Не более 5 pending-напоминаний на задачу; fire_at строго в будущем.
+      operationId: createReminder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReminderCreateInput' }
+      responses:
+        '201':
+          description: Напоминание создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reminder' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: Превышен лимит напоминаний
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/reminders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [reminders]
+      summary: Удалить напоминание
+      operationId: deleteReminder
+      responses:
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/notifications:
+    get:
+      tags: [notifications]
+      summary: Лента уведомлений
+      operationId: listNotifications
+      parameters:
+        - name: unread
+          in: query
+          schema: { type: boolean, default: false }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: Уведомления и общее число непрочитанных
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/notifications/{id}/read:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [notifications]
+      summary: Отметить уведомление прочитанным
+      operationId: markRead
+      responses:
+        '204': { description: Ок }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/notifications/read-all:
+    post:
+      tags: [notifications]
+      summary: Отметить прочитанными все уведомления
+      operationId: markAllRead
+      responses:
+        '204': { description: Ок }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/push/public-key:
+    get:
+      tags: [push]
+      summary: Публичный VAPID-ключ
+      operationId: getVapidPublicKey
+      responses:
+        '200':
+          description: Base64url-ключ для PushManager.subscribe
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [public_key]
+                properties:
+                  public_key: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/push/subscription:
+    put:
+      tags: [push]
+      summary: Сохранить или обновить push-подписку
+      description: Тело — сырой результат PushSubscription.toJSON(). Идемпотентно по endpoint.
+      operationId: putPushSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushSubscriptionInput' }
+      responses:
+        '201': { description: Подписка сохранена }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [push]
+      summary: Удалить push-подписку
+      operationId: deletePushSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: { type: string }
+      responses:
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/stats:
+    get:
+      tags: [analytics]
+      summary: Счётчики для дашборда
+      operationId: getStats
+      responses:
+        '200':
+          description: Статистика
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Stats' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/insights:
+    get:
+      tags: [analytics]
+      summary: Rule-based подсказки
+      description: Детерминированный движок, без внешних LLM. Правила — в docs/07-ai-insights.md.
+      operationId: getInsights
+      responses:
+        '200':
+          description: Подсказки (может быть пустой список)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /healthz:
+    get:
+      tags: [system]
+      summary: Жив ли процесс
+      operationId: healthz
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { status: { type: string, example: ok } }
+
+  /readyz:
+    get:
+      tags: [system]
+      summary: Доступна ли БД
+      operationId: readyz
+      security: []
+      responses:
+        '200': { description: Готов к работе }
+        '503': { description: БД недоступна }
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: tracker_session
+      description: JWT HS256, устанавливается при register/login
+
+  parameters:
+    TaskId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+
+  responses:
+    ValidationError:
+      description: Невалидные данные
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Нет или недействительна сессия
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Не найдено или принадлежит другому пользователю
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Конфликт (например, email уже занят)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Status:
+      type: string
+      enum: [todo, in_progress, done]
+    Priority:
+      type: string
+      enum: [low, medium, high]
+
+    RegisterInput:
+      type: object
+      required: [email, password, name]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Нормализуется сервером в lower()
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          description: 72 байта — ограничение bcrypt
+        name: { type: string, minLength: 1, maxLength: 100 }
+
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    User:
+      type: object
+      required: [id, email, name, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string, maxLength: 100 }
+        created_at: { type: string, format: date-time }
+
+    Task:
+      type: object
+      required: [id, title, description, status, priority, due_at, overdue, due_soon,
+                 reminder_count, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        status: { $ref: '#/components/schemas/Status' }
+        priority: { $ref: '#/components/schemas/Priority' }
+        due_at:
+          type: [string, 'null']
+          format: date-time
+          description: Срок закрытия; null = без срока
+        overdue:
+          type: boolean
+          description: "Вычисляется сервером: due_at < now и статус не done"
+        due_soon:
+          type: boolean
+          description: "Вычисляется сервером: до due_at меньше 24 часов"
+        reminder_count: { type: integer, description: Число pending-напоминаний }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    TaskList:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Task' }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+
+    TaskCreateInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        priority: { $ref: '#/components/schemas/Priority' }
+        due_at: { type: [string, 'null'], format: date-time }
+        status: { $ref: '#/components/schemas/Status' }
+
+    TaskPatchInput:
+      type: object
+      minProperties: 1
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        priority: { $ref: '#/components/schemas/Priority' }
+        due_at: { type: [string, 'null'], format: date-time }
+
+    Reminder:
+      type: object
+      required: [id, task_id, fire_at, message, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        task_id: { type: string, format: uuid }
+        fire_at: { type: string, format: date-time }
+        message: { type: string, maxLength: 200 }
+        status:
+          type: string
+          enum: [pending, sent, expired, failed]
+          description: Меняется только планировщиком
+        created_at: { type: string, format: date-time }
+
+    ReminderCreateInput:
+      type: object
+      required: [fire_at]
+      properties:
+        fire_at: { type: string, format: date-time }
+        message: { type: string, maxLength: 200 }
+
+    Notification:
+      type: object
+      required: [id, kind, title, body, read, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        task_id: { type: [string, 'null'], format: uuid }
+        kind: { type: string, enum: [reminder, system] }
+        title: { type: string }
+        body: { type: string }
+        read: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    NotificationList:
+      type: object
+      required: [items, unread]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Notification' }
+        unread:
+          type: integer
+          description: Общее число непрочитанных, независимо от страницы
+
+    PushSubscriptionInput:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint: { type: string }
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string }
+            auth: { type: string }
+
+    Stats:
+      type: object
+      required: [active, in_progress, done_7d, overdue, due_24h, total]
+      properties:
+        active: { type: integer }
+        in_progress: { type: integer }
+        done_7d: { type: integer }
+        overdue: { type: integer }
+        due_24h: { type: integer }
+        total: { type: integer }
+
+    Insight:
+      type: object
+      required: [code, severity, title, message, task_ids]
+      properties:
+        code:
+          type: string
+          enum: [no_tasks, overdue_exists, due_soon_cluster, overloaded_day,
+                 no_deadline, stale_in_progress, high_priority_in_todo, weekly_progress]
+        severity: { type: string, enum: [info, warning, critical] }
+        title: { type: string }
+        message: { type: string }
+        task_ids:
+          type: array
+          items: { type: string, format: uuid }
+
+    InsightList:
+      type: object
+      required: [generated_at, items]
+      properties:
+        generated_at: { type: string, format: date-time }
+        items:
+          type: array
+          maxItems: 5
+          items: { $ref: '#/components/schemas/Insight' }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [validation_failed, unauthorized, forbidden, not_found,
+                     conflict, limit_exceeded, internal]
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+
+security:
+  - cookieAuth: []
