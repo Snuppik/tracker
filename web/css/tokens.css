@@ -1,0 +1,209 @@
+/*
+ * Дизайн-токены Tracker.
+ * Единственный источник цветов, размеров и шрифтов.
+ * Палитра сохранена из исходного макета demo_web (зелёная тема).
+ */
+:root {
+  color-scheme: light;
+
+  /* Палитра */
+  --c-bg: #f5f7f4;
+  --c-surface: #ffffff;
+  --c-surface-2: #eaf2e8;
+  --c-border: #e1e8e1;
+  --c-border-strong: #c8d6c9;
+  --c-text: #20382e;
+  --c-text-2: #69796f;
+  --c-text-3: #8a9a8e;
+  --c-accent: #287c4d;
+  --c-accent-hover: #1f6340;
+  --c-accent-soft: #eaf2e8;
+  --c-on-accent: #ffffff;
+  --c-danger: #b42318;
+  --c-danger-hover: #912018;
+  --c-danger-soft: #fde8e6;
+  --c-warn: #b54708;
+  --c-warn-soft: #fdf0d5;
+  --c-ok: #287c4d;
+  --c-ok-soft: #e3f2e6;
+  --c-prio-low: #69796f;
+  --c-prio-medium: #b54708;
+  --c-prio-high: #b42318;
+  --c-hero: #194d36;
+  --c-hero-glow: #5c9164;
+  --c-hero-text: #d5e6d6;
+  --c-login: #164530;
+  --c-login-glow: #4b8453;
+  --c-login-text: #cce1d0;
+  --c-brand-1: #97d786;
+  --c-brand-2: #187340;
+  --c-backdrop: #0d211b99;
+  --c-overlay: #ffffff17;
+  --c-overlay-line: #ffffff30;
+  --c-hero-muted: #b9d7bd;
+  --c-ring: #b3df9a;
+  --c-skeleton: #e6ede6;
+  --c-skeleton-hi: #f3f7f2;
+  --c-toast-bg: #20382e;
+  --c-toast-text: #f5f7f4;
+  --c-white: #ffffff;
+
+  /* Типографика */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --fs-11: .6875rem;
+  --fs-12: .75rem;
+  --fs-13: .8125rem;
+  --fs-14: .875rem;
+  --fs-15: .9375rem;
+  --fs-16: 1rem;
+  --fs-20: 1.25rem;
+  --fs-22: 1.375rem;
+  --fs-24: 1.5rem;
+  --fs-27: 1.6875rem;
+  --fs-30: 1.875rem;
+  --fs-32: 2rem;
+  --fs-34: 2.125rem;
+  --fs-38: 2.375rem;
+  --fs-40: 2.5rem;
+  --fs-56: 3.5rem;
+  --fs-h1: clamp(var(--fs-30), 3vw, var(--fs-40));
+  --fs-login-h1: clamp(var(--fs-34), 4vw, var(--fs-56));
+  --lh-tight: 1.14;
+  --lh-title: 1.2;
+  --lh-title-sm: 1.35;
+  --lh-body: 1.6;
+  --fw-normal: 400;
+  --fw-medium: 600;
+  --fw-bold: 700;
+  --fw-extra: 750;
+  --ls-tight: -1.2px;
+  --ls-tight-sm: -.5px;
+  --ls-wide: 1.8px;
+  --ls-wider: 1.5px;
+  --ls-brand: -1px;
+  --ls-badge: .04em;
+
+  /* Отступы: шкала 4px */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+  --s-hero: 32px 38px;
+  --s-hero-sm: 26px;
+  --s-hero-xs: 24px 20px;
+  --s-sidebar: 32px 22px;
+  --s-sidebar-md: 24px 14px;
+  --s-sidebar-sm: 16px;
+  --s-btn: 11px 18px;
+  --s-btn-sm: 4px 8px;
+  --s-btn-xs: 2px 8px;
+  --s-login: clamp(30px, 6vw, 90px);
+  --s-login-sm: 30px;
+
+  /* Радиусы */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 18px;
+  --r-2xl: 22px;
+  --r-3xl: 28px;
+  --r-pill: 30px;
+  --r-brand: 22px 4px 22px 4px;
+  --r-bar: 7px 7px 0 0;
+  --r-full: 50%;
+
+  /* Тени и движение */
+  --sh-1: 0 12px 40px #163b2010;
+  --sh-2: 0 18px 50px #163b2026;
+  --sh-ring: 0 0 0 3px #287c4d33;
+  --dur: 150ms;
+  --dur-slow: 300ms;
+  --dur-shimmer: 1.4s;
+  --blur: 4px;
+
+  /* Размеры */
+  --bw-1: 1px;
+  --bw-2: 2px;
+  --bw-3: 3px;
+  --bw-7: 7px;
+  --bw-10: 10px;
+  --w-sidebar: 240px;
+  --w-sidebar-md: 200px;
+  --w-content: 1600px;
+  --w-search: 440px;
+  --w-dialog: min(480px, 92vw);
+  --w-dialog-lg: min(640px, 92vw);
+  --w-login-form: 430px;
+  --w-login-story: 420px;
+  --w-topbar-date: 160px;
+  --w-table-min: 760px;
+  --w-insight-min: 240px;
+  --size-brand-w: 36px;
+  --size-brand-h: 40px;
+  --size-ring: 150px;
+  --size-ring-sm: 100px;
+  --size-check: 44px;
+  --size-icon: 40px;
+  --size-avatar: 34px;
+  --size-dot: 7px;
+  --size-badge: 18px;
+  --size-bell: 42px;
+  --size-toast-max: 360px;
+  --size-skeleton-card: 84px;
+  --h-textarea: 96px;
+  --h-notifications: 60vh;
+  --z-header: 5;
+  --z-toast: 20;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --c-bg: #101a16;
+  --c-surface: #19271f;
+  --c-surface-2: #243d2e;
+  --c-border: #304237;
+  --c-border-strong: #3f5748;
+  --c-text: #e7efe8;
+  --c-text-2: #a2b4a6;
+  --c-text-3: #7f9284;
+  --c-accent: #90d7a5;
+  --c-accent-hover: #a9e5bb;
+  --c-accent-soft: #243d2e;
+  --c-on-accent: #101a16;
+  --c-danger: #f97066;
+  --c-danger-hover: #ff8f87;
+  --c-danger-soft: #3a1d1b;
+  --c-warn: #fdb022;
+  --c-warn-soft: #3a2a12;
+  --c-ok: #90d7a5;
+  --c-ok-soft: #1f3a29;
+  --c-prio-low: #a2b4a6;
+  --c-prio-medium: #fdb022;
+  --c-prio-high: #f97066;
+  --c-hero: #143726;
+  --c-hero-glow: #2f6b47;
+  --c-hero-text: #cfe3d2;
+  --c-login: #0f2b1e;
+  --c-login-glow: #2c5c3d;
+  --c-login-text: #c2d8c6;
+  --c-brand-1: #8fd07e;
+  --c-brand-2: #145c33;
+  --c-backdrop: #050d0a99;
+  --c-overlay: #ffffff10;
+  --c-overlay-line: #ffffff24;
+  --c-hero-muted: #a8c4ad;
+  --c-ring: #7fbd88;
+  --c-skeleton: #22352a;
+  --c-skeleton-hi: #2c4435;
+  --c-toast-bg: #e7efe8;
+  --c-toast-text: #101a16;
+  --c-white: #ffffff;
+  --sh-1: 0 12px 40px #0002;
+  --sh-2: 0 18px 50px #0004;
+  --sh-ring: 0 0 0 3px #90d7a533;
+}

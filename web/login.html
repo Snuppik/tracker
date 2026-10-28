@@ -1,14 +1,63 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tracker — вход</title>
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/pages.css">
+  <script type="module" src="js/app.js"></script>
 </head>
-<body>
-  <!-- Заглушка: страницу входа реализует FE2 (web/*.html). -->
-  <h1>Вход</h1>
-  <p>Форма входа в разработке.</p>
-  <p><a href="/">На доску</a></p>
+<body class="login">
+  <main class="login-layout">
+    <section class="login-story">
+      <a class="brand" href="login.html" aria-label="Tracker">
+        <span class="brand-icon" aria-hidden="true">✓</span>
+        Tracker<span class="dot">.</span>
+      </a>
+      <span class="pill">ЗАДАЧИ · СРОКИ · НАПОМИНАНИЯ</span>
+      <h1>Большие изменения<br>начинаются<br>с маленького шага.</h1>
+      <p>Создавайте задачи, замечайте прогресс и двигайтесь в собственном ритме.</p>
+      <div class="sample">✓ &nbsp; Сдать отчёт <span>Сегодня, 18:30</span></div>
+    </section>
+
+    <section class="login-form">
+      <button class="btn btn-ghost" type="button" data-theme-toggle>Сменить тему</button>
+      <h2 id="formTitle">Начните свой путь</h2>
+      <p id="formHint">Войдите, чтобы вернуться к своим задачам.</p>
+
+      <div class="auth-switch" role="tablist" aria-label="Вход или регистрация">
+        <button type="button" role="tab" data-mode="login" aria-selected="true">Вход</button>
+        <button type="button" role="tab" data-mode="register" aria-selected="false">Регистрация</button>
+      </div>
+
+      <form id="loginForm" novalidate>
+        <label class="field" id="nameField" for="name" hidden>Имя
+          <input id="name" name="name" type="text" maxlength="100" autocomplete="name">
+          <span class="field-error" data-error="name"></span>
+        </label>
+
+        <label class="field" for="email">Электронная почта
+          <input id="email" name="email" type="email" maxlength="254" autocomplete="email" required>
+          <span class="field-error" data-error="email"></span>
+        </label>
+
+        <label class="field" for="password">Пароль
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <span class="field-error" data-error="password"></span>
+        </label>
+
+        <p class="form-error" id="formError" role="alert" hidden></p>
+
+        <button class="btn btn-primary" type="submit" id="submitAuth">Войти →</button>
+      </form>
+
+      <p class="muted">Пароль — не менее 8 символов. Данные хранятся на сервере Tracker.</p>
+    </section>
+  </main>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 </body>
 </html>

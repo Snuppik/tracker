@@ -1,14 +1,207 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tracker</title>
+  <title>Tracker — мои задачи</title>
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/pages.css">
+  <script type="module" src="js/app.js"></script>
 </head>
-<body>
-  <!-- Заглушка: страницу доски реализует FE2 (web/*.html). -->
-  <h1>Tracker</h1>
-  <p>Каркас приложения. Фронтенд в разработке.</p>
-  <p><a href="/login">Войти</a></p>
+<body data-page="app">
+  <aside class="sidebar">
+    <a class="brand" href="index.html" aria-label="Tracker — на главную">
+      <span class="brand-icon" aria-hidden="true">✓</span>
+      Tracker<span class="dot">.</span>
+    </a>
+    <p class="eyebrow">ЛИЧНОЕ ПРОСТРАНСТВО</p>
+
+    <nav class="nav" aria-label="Основная навигация">
+      <button class="nav-link" type="button" data-view="kanban" aria-current="page">Доска</button>
+      <button class="nav-link" type="button" data-view="list">Список</button>
+    </nav>
+
+    <div class="aside-note">
+      Маленькие шаги.<br>
+      <strong>Большие перемены.</strong>
+      <p>Ваш прогресс начинается сегодня.</p>
+    </div>
+
+    <button class="sidebar-logout" id="logout" type="button">Выйти ↗</button>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar">
+      <div class="topbar-date"><span id="today"></span></div>
+
+      <div class="topbar-actions">
+        <label class="search" for="search">
+          <span class="visually-hidden">Поиск задач</span>
+          <input id="search" type="search" placeholder="Поиск по названию" autocomplete="off">
+        </label>
+
+        <button class="btn-icon bell" id="bell" type="button" aria-label="Уведомления" aria-haspopup="dialog">
+          <span aria-hidden="true">🔔</span>
+          <span class="badge-count" id="unread" hidden>0</span>
+        </button>
+
+        <button class="btn btn-ghost" type="button" data-theme-toggle>Сменить тему</button>
+        <span class="user-name" id="userName"></span>
+      </div>
+    </header>
+
+    <section class="view" aria-labelledby="pageTitle">
+      <div class="heading">
+        <div>
+          <p class="eyebrow">ВАШ ДЕНЬ</p>
+          <h1 id="pageTitle">Задачи</h1>
+        </div>
+        <button class="btn btn-primary" type="button" data-add>+ Новая задача</button>
+      </div>
+
+      <section class="hero" aria-labelledby="heroTitle">
+        <div class="hero-body">
+          <span class="pill">ПРИОРИТЕТЫ · СРОКИ · ПРОГРЕСС</span>
+          <h2 id="heroTitle">С возвращением!</h2>
+          <p id="heroText">Загружаем ваши задачи…</p>
+        </div>
+        <div class="ring" aria-hidden="true">
+          <strong id="ringValue">0</strong>
+          <span>готово за 7 дней</span>
+        </div>
+      </section>
+
+      <section class="stats" id="stats" aria-label="Счётчики задач"></section>
+      <section class="insights" id="insights" aria-label="Аналитика"></section>
+
+      <div class="toolbar">
+        <div class="toolbar-filters">
+          <label class="field-inline" for="filterStatus">Статус
+            <select id="filterStatus">
+              <option value="">Все</option>
+              <option value="todo">К работе</option>
+              <option value="in_progress">В работе</option>
+              <option value="done">Готово</option>
+            </select>
+          </label>
+
+          <label class="field-inline" for="filterPriority">Приоритет
+            <select id="filterPriority">
+              <option value="">Все</option>
+              <option value="low">Низкий</option>
+              <option value="medium">Средний</option>
+              <option value="high">Высокий</option>
+            </select>
+          </label>
+
+          <span class="result-count" id="resultCount"></span>
+        </div>
+
+        <div class="view-switch" role="group" aria-label="Вид задач">
+          <button type="button" data-view="kanban" aria-pressed="true">Доска</button>
+          <button type="button" data-view="list" aria-pressed="false">Список</button>
+        </div>
+      </div>
+
+      <div id="board" class="board"></div>
+      <div id="list" hidden></div>
+    </section>
+
+    <footer class="footer">Tracker · Растите в своём темпе</footer>
+  </main>
+
+  <dialog class="dialog dialog-lg" id="taskDialog" aria-labelledby="taskDialogTitle">
+    <form id="taskForm" novalidate>
+      <div class="dialog-head">
+        <h2 id="taskDialogTitle">Новая задача</h2>
+        <button class="btn-icon" type="button" data-close aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Разделы задачи">
+        <button class="tab is-active" type="button" role="tab" data-tab="details"
+          aria-selected="true" aria-controls="panelDetails">Детали</button>
+        <button class="tab" type="button" role="tab" data-tab="reminders"
+          aria-selected="false" aria-controls="panelReminders">Напоминания</button>
+      </div>
+
+      <div class="tab-panel" id="panelDetails" data-panel="details" role="tabpanel">
+        <label class="field" for="taskTitle">Название
+          <input id="taskTitle" name="title" type="text" maxlength="200" autocomplete="off" required>
+          <span class="field-error" data-error="title"></span>
+        </label>
+
+        <label class="field" for="taskDescription">Описание
+          <textarea id="taskDescription" name="description" rows="3" maxlength="2000"></textarea>
+          <span class="field-error" data-error="description"></span>
+        </label>
+
+        <div class="field-row">
+          <label class="field" for="taskPriority">Приоритет
+            <select id="taskPriority" name="priority">
+              <option value="low">Низкий</option>
+              <option value="medium" selected>Средний</option>
+              <option value="high">Высокий</option>
+            </select>
+            <span class="field-error" data-error="priority"></span>
+          </label>
+
+          <label class="field" for="taskDue">Срок
+            <input id="taskDue" name="due_at" type="datetime-local">
+            <span class="field-error" data-error="due_at"></span>
+          </label>
+        </div>
+
+        <label class="field" for="taskStatus">Статус
+          <select id="taskStatus" name="status">
+            <option value="todo">К работе</option>
+            <option value="in_progress">В работе</option>
+            <option value="done">Готово</option>
+          </select>
+          <span class="field-error" data-error="status"></span>
+        </label>
+      </div>
+
+      <div class="tab-panel" id="panelReminders" data-panel="reminders" role="tabpanel" hidden>
+        <div id="reminders"></div>
+      </div>
+
+      <div class="dialog-actions">
+        <button class="btn btn-danger-ghost" type="button" id="deleteTask" hidden>Удалить</button>
+        <span class="spacer"></span>
+        <button class="btn" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit" id="saveTask">Создать задачу</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="confirmDialog" aria-labelledby="confirmTitle">
+    <form method="dialog">
+      <h2 id="confirmTitle">Удалить задачу?</h2>
+      <p id="confirmText">Действие нельзя отменить.</p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button class="btn" value="cancel">Отмена</button>
+        <button class="btn btn-primary" id="confirmOk" value="ok">Удалить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="notificationsDialog" aria-labelledby="notificationsTitle">
+    <div class="dialog-head">
+      <h2 id="notificationsTitle">Уведомления</h2>
+      <button class="btn-icon" type="button" data-close aria-label="Закрыть">×</button>
+    </div>
+
+    <div class="notifications-actions">
+      <button class="btn btn-ghost btn-sm" type="button" id="markAllRead">Прочитать все</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="enablePush">Включить уведомления</button>
+    </div>
+
+    <div class="notifications" id="notificationsList"></div>
+  </dialog>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 </body>
 </html>
