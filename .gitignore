@@ -1,0 +1,18 @@
+# Секреты и локальное окружение
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Артефакты сборки
+/bin/
+/tracker
+/coverage.out
+*.test
+
+# Служебное
+.DS_Store
+*.swp
+.idea/
+.vscode/
