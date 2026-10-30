@@ -49,10 +49,14 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// resetDB очищает все таблицы между тестами.
+// resetDB удаляет данные только своих тестовых пользователей (@example.com).
+// Пакеты гоняются параллельно и делят одну тестовую БД, поэтому общий TRUNCATE
+// разрушил бы данные других пакетов прямо во время их тестов.
+// Все дочерние таблицы (tasks, reminders, notifications, push_subscriptions)
+// чистятся каскадно по users.id.
 func resetDB(t *testing.T) {
 	t.Helper()
-	const query = `TRUNCATE users, tasks, reminders, notifications, push_subscriptions RESTART IDENTITY CASCADE`
+	const query = `DELETE FROM users WHERE email LIKE '%@example.com'`
 	if _, err := testDB.ExecContext(context.Background(), query); err != nil {
 		t.Fatalf("очистка тестовой БД: %v", err)
 	}
@@ -74,6 +78,10 @@ func newTestServer(t *testing.T) *httptest.Server {
 		cfg, logger, testDB, tokens,
 		service.NewAuthService(store.NewUserStore(testDB), tokens),
 		service.NewTaskService(testDB),
+		service.NewReminderService(testDB),
+		service.NewNotificationService(testDB),
+		service.NewPushService(testDB, "test-vapid-public-key", true),
+		service.NewStatsService(testDB),
 	)
 
 	ts := httptest.NewServer(server.Handler())
@@ -167,4 +175,16 @@ func decodeItems(t *testing.T, data []byte) []any {
 		t.Fatalf("в ответе нет items: %s", data)
 	}
 	return items
+}
+
+// hasErrorCode проверяет машинный код ошибки в контрактом формате.
+func hasErrorCode(t *testing.T, data []byte, code string) bool {
+	t.Helper()
+	body := decodeMap(t, data)
+	errBody, ok := body["error"].(map[string]any)
+	if !ok {
+		return false
+	}
+	got, _ := errBody["code"].(string)
+	return got == code
 }
