@@ -55,7 +55,7 @@ function render() {
     <div class="reminders">
       ${reminders.length ? reminders.map(reminderItem).join('') : '<p class="muted">Напоминаний пока нет.</p>'}
     </div>
-    <form class="reminder-form" novalidate>
+    <div class="reminder-form">
       <label class="field">Когда
         <input type="datetime-local" name="fire_at" min="${esc(fmtLocalInputValue(new Date().toISOString()))}" ${disabled ? 'disabled' : ''}>
         <span class="field-error" data-error="fire_at"></span>
@@ -64,16 +64,16 @@ function render() {
         <input type="text" name="message" maxlength="200" placeholder="За час до дедлайна" ${disabled ? 'disabled' : ''}>
         <span class="field-error" data-error="message"></span>
       </label>
-      <button class="btn btn-primary" type="submit" ${disabled ? 'disabled' : ''}>Сохранить</button>
-    </form>
+      <button class="btn btn-primary" type="button" data-action="add-reminder" ${disabled ? 'disabled' : ''}>Добавить напоминание</button>
+    </div>
     ${isDone ? '<p class="muted">Для выполненной задачи напоминания не отправляются.</p>' : ''}
   `;
 
   const form = root.querySelector('.reminder-form');
 
   if (form) {
-    const submit = form.querySelector('button[type="submit"]');
-    const fireInput = form.elements.fire_at;
+    const submit = form.querySelector('[data-action="add-reminder"]');
+    const fireInput = form.querySelector('[name="fire_at"]');
 
     const syncSubmit = () => {
       const date = fireInput.value ? new Date(fireInput.value) : null;
@@ -87,9 +87,15 @@ function render() {
     fireInput.addEventListener('input', syncSubmit);
     syncSubmit();
 
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      createReminder(form);
+    submit.addEventListener('click', () => createReminder(form));
+
+    // Enter в полях добавляет напоминание, а не отправляет форму задачи:
+    // блок живёт внутри #taskForm, и без перехвата браузер сабмитит задачу.
+    form.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
+        event.preventDefault();
+        createReminder(form);
+      }
     });
   }
 
@@ -101,8 +107,12 @@ function render() {
 async function createReminder(form) {
   clearFormErrors(form);
 
-  const fireAt = form.elements.fire_at.value;
-  const message = form.elements.message.value.trim();
+  const fireInput = form.querySelector('[name="fire_at"]');
+  const messageInput = form.querySelector('[name="message"]');
+  if (!fireInput || !messageInput) return;
+
+  const fireAt = fireInput.value;
+  const message = messageInput.value.trim();
 
   if (!fireAt) {
     showFieldError(form, 'fire_at', 'Выберите дату и время');
@@ -158,7 +168,19 @@ async function createReminder(form) {
     render();
 
     const nextForm = root.querySelector('.reminder-form');
-    if (nextForm && error.code === 'validation_failed') {
+    if (!nextForm) return;
+
+    // render() пересоздал поля — возвращаем введённое, чтобы не заставлять
+    // пользователя набирать дату и текст заново после ошибки.
+    const nextFire = nextForm.querySelector('[name="fire_at"]');
+    const nextMessage = nextForm.querySelector('[name="message"]');
+    if (nextFire) {
+      nextFire.value = fireAt;
+      nextFire.dispatchEvent(new Event('input'));
+    }
+    if (nextMessage) nextMessage.value = message;
+
+    if (error.code === 'validation_failed') {
       const field = error.details?.[0]?.field ?? 'fire_at';
       showFieldError(nextForm, field, error.fieldError?.(field) ?? error.message);
     } else {

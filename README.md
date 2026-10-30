@@ -24,6 +24,7 @@ curl http://localhost:8080/readyz           # 200 — база доступна
 
 ```bash
 docker compose up -d postgres
+make test-db                                # один раз: создать пустую БД tracker_test
 go run ./cmd/api                            # http://localhost:8080
 make lint test                              # gofmt + vet + тесты
 ```

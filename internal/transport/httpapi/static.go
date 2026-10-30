@@ -34,8 +34,11 @@ func newStaticHandler() http.Handler {
 			http.NotFound(w, r)
 		default:
 			if _, err := fs.Stat(web.Files, name); err == nil {
+				// revalidate: браузер берёт ETag/Last-Modified и спрашивает сервер.
+				// Без версионирования в URL (T-12) «immutable» на год прятал бы
+				// исправления JS — команды получали старый код после перезапуска API.
 				if strings.HasPrefix(name, "css/") || strings.HasPrefix(name, "js/") {
-					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+					w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
 				}
 				fileServer.ServeHTTP(w, r)
 				return

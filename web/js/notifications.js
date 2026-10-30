@@ -83,9 +83,20 @@ async function markAllRead() {
   }
 }
 
+/** Сравнение ленты: обновляем состояние, только если что-то реально изменилось. */
+function sameFeed(previous, next) {
+  if (previous.length !== next.length) return false;
+  return previous.every((item, index) => (
+    item.id === next[index].id && item.read === next[index].read
+  ));
+}
+
 async function poll() {
   try {
     const data = await api.notifications();
+    // Без этой проверки каждые 30 секунд перерисовывалась вся доска,
+    // обрывая drag&drop и закрывая открытые списки.
+    if (get('unread') === data.unread && sameFeed(get('notifications'), data.items)) return;
     set({ notifications: data.items, unread: data.unread });
   } catch {
     // Молча: следующая попытка через 30 секунд.
@@ -117,14 +128,19 @@ async function enablePush() {
     return;
   }
 
-  const permission = await Notification.requestPermission();
-  if (permission !== 'granted') {
-    toast('Разрешение на уведомления не выдано', 'error');
-    return;
-  }
-
   try {
     const { public_key: publicKey } = await api.vapidKey();
+    if (!publicKey) {
+      toast('Push не настроен на сервере — уведомления придут в колокольчик', 'error');
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      toast('Разрешение на уведомления не выдано', 'error');
+      return;
+    }
+
     const registration = await navigator.serviceWorker.ready;
     let subscription = await registration.pushManager.getSubscription();
 

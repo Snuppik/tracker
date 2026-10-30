@@ -25,7 +25,8 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
       for (const windowClient of windows) {
-        if (windowClient.url.includes('/')) {
+        // Фокусируем вкладку приложения, а не страницу входа и не чужой origin.
+        if (windowClient.url.startsWith(self.location.origin)) {
           return windowClient.focus();
         }
       }
