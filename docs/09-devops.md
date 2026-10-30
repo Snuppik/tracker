@@ -81,6 +81,16 @@ go run ./cmd/api
 | `REMINDER_GRACE_MINUTES` | нет (default `10`) | `10` | Окно «не спамить после простоя» |
 | `LOG_LEVEL` | нет (default `info`) | `debug` \| `info` \| `warn` \| `error` | `slog` |
 
+Переменные, которые читает **сам docker compose** (в приложение не попадают):
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `tracker` / `tracker` / `tracker` | Реквизиты контейнера БД. На сервере пароль **обязательно** сменить |
+| `POSTGRES_BIND` | `127.0.0.1:5432` | Адрес публикации порта БД. Только loopback |
+| `TRACKER_DOMAIN` | `localhost` | Домен для Caddy. Реальный домен → Let's Encrypt; `localhost` → внутренний сертификат |
+| `TRACKER_API_HOST` / `TRACKER_API_PORT` | `127.0.0.1` / `8080` | Куда публикуется API. Снаружи доступ идёт через Caddy |
+| `TRACKER_HTTP_PORT` / `TRACKER_HTTPS_PORT` | `80` / `443` | Порты Caddy, если их занимает панель провайдера |
+
 **Правила:**
 1. `config.Load()` читает env; если `ENV=dev` и файл `.env` существует — подгружает его через `godotenv.Load()` (не переопределяя уже выставленные переменные окружения).
 2. Отсутствие `DATABASE_URL` или `JWT_SECRET` → `log.Fatal` с внятным сообщением («JWT_SECRET not set; run: openssl rand -hex 32»). Не «генерируем случайный».
@@ -103,15 +113,15 @@ services:
     container_name: tracker-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: tracker
-      POSTGRES_PASSWORD: tracker
-      POSTGRES_DB: tracker
+      POSTGRES_USER: ${POSTGRES_USER:-tracker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tracker}
+      POSTGRES_DB: ${POSTGRES_DB:-tracker}
     ports:
-      - "5432:5432"        # конфликт с локальным PG → "5433:5432" и правка DATABASE_URL
+      - "${POSTGRES_BIND:-127.0.0.1:5432}:5432"   # только loopback
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tracker -d tracker"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tracker} -d ${POSTGRES_DB:-tracker}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -123,22 +133,46 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false        # чистый клон без .env не падает
     environment:
-      DATABASE_URL: postgres://tracker:tracker@postgres:5432/tracker?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-tracker}:${POSTGRES_PASSWORD:-tracker}@postgres:5432/${POSTGRES_DB:-tracker}?sslmode=disable
       ENV: production
+      COOKIE_SECURE: "true"    # HTTPS терминирует Caddy
     ports:
-      - "8080:8080"
+      - "${TRACKER_API_HOST:-127.0.0.1}:${TRACKER_API_PORT:-8080}:8080"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: tracker-caddy
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      TRACKER_DOMAIN: ${TRACKER_DOMAIN:-localhost}
+    ports:
+      - "${TRACKER_HTTP_PORT:-80}:80"
+      - "${TRACKER_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
 ```
 
 Нюансы, которые надо знать заранее:
 - **`environment` перекрывает `env_file`** в compose: внутри контейнера БД всегда будет `@postgres`, даже если в `.env` стоит `@localhost`. Иначе на демо контейнер не найдёт базу.
 - `depends_on` без `condition: service_healthy` не ждёт готовности — API стартует раньше PG и падает. Поэтому healthcheck обязателен.
-- Хост-маппинг `5432` может конфликтовать с установленным в системе PostgreSQL 14. Проверка: `sudo ss -lntp | grep 5432`. Конфликт → `5433:5432` + `DATABASE_URL=...localhost:5433...` для локального запуска API.
-- Внутри контейнера `ENV=production` включает `Secure` на cookie. **На демо через `http://localhost` это сломает авторизацию** (cookie не установится по HTTP). Решение: в compose оставить `ENV: dev`, либо добавить `COOKIE_SECURE=false` и использовать его как единственный источник истины. Рекомендуемый вариант — **`COOKIE_SECURE` отдельной переменной**, по умолчанию `false`; в `production` включать только за HTTPS.
+- **`env_file` с `required: false`**: без `.env` compose не падает, но API завершится с понятной ошибкой `JWT_SECRET не задан`. Это ожидаемое поведение — секреты обязательны.
+- **Порт БД только на loopback.** Снаружи база недоступна (на сервере это критично), но локальные `go test` и psql работают через `localhost:5432`. Конфликт с системным PostgreSQL 14 → `POSTGRES_BIND=127.0.0.1:5433` в `.env` и правка `DATABASE_URL` для локального `go run`.
+- **`COOKIE_SECURE: "true"`** работает только за HTTPS. Локально HTTPS отдаёт Caddy (`https://localhost`, сертификат внутренний — принять один раз). Если открывать `http://localhost:8080` напрямую, авторизация сломается: cookie с `Secure` браузер по HTTP не поставит. Для такого режима задайте `COOKIE_SECURE=false`.
+- **Caddy** терминирует TLS и проксирует всё на `api:8080`. Домен берётся из `TRACKER_DOMAIN`; при значении `localhost` выпускается внутренний сертификат, при реальном домене — Let's Encrypt (нужны открытые 80/443 и A-запись).
+- **`5432` в списке `ports`** означает «порт опубликован на 127.0.0.1», а не «доступен из интернета».
+
 
 ## 7. `Dockerfile` (multi-stage)
 
@@ -269,9 +303,10 @@ demo:       ; docker compose down -v && docker compose up -d --build
 | `undefined: uuid` при импорте `uuid` | Go < 1.27 (stdlib-пакет появился в 1.27) | Обновить Go; либо временно `github.com/google/uuid` (и зафиксировать это в `00-decisions.md`) |
 | `log/slog` не найден | Go < 1.21 | Обновить Go |
 | `docker compose` — «not a docker command» | Не установлен v2 plugin | §3 |
-| `bind: address already in use` на 5432 | Системный PostgreSQL 14 слушает порт | `5433:5432` в compose + правка `DATABASE_URL`, либо `sudo systemctl stop postgresql` |
+| `bind: address already in use` на 5432 | Системный PostgreSQL 14 слушает порт | `POSTGRES_BIND=127.0.0.1:5433` в `.env` + правка `DATABASE_URL` для локального `go run`, либо `sudo systemctl stop postgresql` |
 | API падает: `dial tcp ... connection refused` | База ещё не поднялась | Проверить `depends_on.condition` и healthcheck; вручную — `docker compose ps` |
-| После логина сразу 401 | `Secure` cookie на `http://localhost` | `COOKIE_SECURE=false` / `ENV=dev` |
+| После логина сразу 401 | `Secure` cookie на `http://localhost` | Открыть `https://localhost` (Caddy) либо задать `COOKIE_SECURE=false` |
+| Caddy: `failed to obtain certificate` | Нет A-записи, закрыт 80/443 или домен не совпадает | Проверить DNS (`dig +short домен`), открыть 80/443 в группе безопасности, проверить `TRACKER_DOMAIN` |
 | `permission denied` на docker | Пользователь не в группе docker | `sudo usermod -aG docker $USER` + перезапуск WSL |
 | Сборка «висит» на `/mnt/d` | drvfs metadata overhead | Перенести репозиторий в `~/projects/tracker` |
 | `go: module requires go >= 1.27` | В `go.mod` стоит `go 1.27`, а участник на 1.26 | Обновить Go; временное решение — `GOTOOLCHAIN=auto` (скачает тулчейн сам) |
@@ -283,3 +318,81 @@ demo:       ; docker compose down -v && docker compose up -d --build
 - `go test ./...` — зелёный вывод в конце.
 - `go mod graph | wc -l` — маленькое дерево зависимостей (5 прямых зависимостей, см. `AGENTS.md` §4).
 - Отсутствие Node_modules: «фронт на нативных API браузера, 0 внешних запросов, работает офлайн».
+
+## 13. Деплой на облачный сервер
+
+Целевая схема: **Caddy (80/443, TLS) → api (8080) → postgres (5432, только внутри сети compose)**.
+База и приложение — контейнеры, HTTPS — обязателен для Web Push.
+Подходит любой VPS с Docker; ниже — требования и общий порядок.
+
+### 13.1. Требования к серверу
+
+| Параметр | Значение |
+|---|---|
+| Конфигурация | 2 vCPU / 2 ГБ RAM / 20 ГБ диск (сборка Go-образа на 1 ГБ RAM падает по OOM) |
+| Сеть | публичный IPv4 |
+| Файрвол | входящие `22`, `80`, `443`. `5432` и `8080` **не открывать** |
+| Домен | A-запись → публичный IP (нужен для Let's Encrypt и Web Push) |
+
+### 13.2. Подготовка `.env` на сервере
+
+```bash
+git clone git@github.com:Snuppik/tracker.git /opt/tracker && cd /opt/tracker
+cp .env.example .env
+
+openssl rand -hex 32          # → JWT_SECRET
+openssl rand -hex 16          # → POSTGRES_PASSWORD (и тот же в DATABASE_URL)
+go run ./cmd/genvapid         # → VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY
+```
+
+Обязательно в `.env` на сервере:
+```
+ENV=production
+COOKIE_SECURE=true
+JWT_SECRET=<32 байта hex>
+POSTGRES_PASSWORD=<свой пароль>
+TRACKER_DOMAIN=<домен>
+```
+
+### 13.3. Запуск
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=30 api caddy
+curl -s https://<домен>/readyz        # 200 — база доступна
+```
+
+Первый запуск сам применяет `db/schema.sql` (`store.Migrate` в `cmd/api/main.go`) — ручные миграции не нужны.
+
+### 13.4. Проверка после деплоя
+
+1. Открыть `https://<домен>` → страница входа, сертификат валидный.
+2. Зарегистрироваться, создать задачу.
+3. Поставить напоминание на +1 минуту → через ~60–90 с запись в ленте уведомлений.
+4. Нажать «Включить уведомления» → разрешение браузера → push приходит системным уведомлением (работает только на HTTPS).
+5. `curl -s https://<домен>/js/reminders.js | grep -c 'data-action="add-reminder"'` → `1`.
+
+### 13.5. Остановка и экономия
+
+```bash
+docker compose down          # остановить контейнеры (данные в томе pgdata сохраняются)
+docker compose down -v       # ОПАСНО: удаляет базу
+```
+
+На время между демо сервер можно выключать в панели провайдера — при почасовой оплате счёт идёт только за время работы.
+
+### 13.6. Резервная копия (перед демо)
+
+```bash
+docker compose exec -T postgres pg_dump -U tracker tracker | gzip > backup-$(date +%F).sql.gz
+```
+
+### 13.7. reg.ru: особенности
+
+- Нужен **VPS** (`reg.ru/vps`), не «виртуальный хостинг»: на shared-хостинге нет Docker и нельзя держать долгоживущий Go-процесс.
+- При заказе можно выбрать **автоустановку Docker** — тогда шаги установки пропускаются.
+- Домен `vibetracker.ru` уже в reg.ru, поэтому **DNS переносить не нужно**: `Домены → vibetracker.ru → Управление зоной` → A-запись `@` → IP сервера, вторая A-запись `www` → тот же IP.
+- Файрвол по умолчанию открыт; при желании закрыть всё лишнее через `ufw` (`allow 22,80,443`).
+- Есть Free Tier (1 vCPU / 1 ГБ RAM / 10 ГБ, 3 месяца). Годится только с добавленным swap: `fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile` — иначе `docker compose build` падает по памяти.
+

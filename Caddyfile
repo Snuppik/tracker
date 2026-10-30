@@ -1,0 +1,15 @@
+# Caddy — reverse proxy + автоматический TLS от Let's Encrypt.
+#
+# Домен подставляется из переменной окружения TRACKER_DOMAIN (см. docker-compose.yml).
+# Значение по умолчанию — localhost: Caddy работает без внешнего DNS и выпускает
+# внутренний сертификат, который нужно один раз принять в браузере.
+#
+# Запуск на сервере:  TRACKER_DOMAIN=tracker.example.ru docker compose up -d --build
+# Проверка локально:  docker compose up -d --build   (затем https://localhost)
+#
+# Caddy сам делает редирект http -> https и сам обновляет сертификат.
+
+{$TRACKER_DOMAIN:localhost} {
+	# Статика и API отдаются одним контейнером (web/ вшит в бинарник через go:embed).
+	reverse_proxy api:8080
+}

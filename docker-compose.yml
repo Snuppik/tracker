@@ -4,15 +4,19 @@ services:
     container_name: tracker-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: tracker
-      POSTGRES_PASSWORD: tracker
-      POSTGRES_DB: tracker
+      POSTGRES_USER: ${POSTGRES_USER:-tracker}
+      # Пароль из .env (POSTGRES_PASSWORD). По умолчанию — только для локальной разработки.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tracker}
+      POSTGRES_DB: ${POSTGRES_DB:-tracker}
+    # Порт публикуется ТОЛЬКО на loopback: снаружи база недоступна, но локальные
+    # `go test` и psql продолжают работать (им нужен localhost:5432).
+    # Конфликт с системным PostgreSQL: POSTGRES_BIND=127.0.0.1:5433 и правка DATABASE_URL.
     ports:
-      - "5432:5432"
+      - "${POSTGRES_BIND:-127.0.0.1:5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tracker -d tracker"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tracker} -d ${POSTGRES_DB:-tracker}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -24,14 +28,39 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    env_file: .env
+    # required:false — на чистом клоне без .env `docker compose up` не падает (критерий приёмки №1).
+    env_file:
+      - path: .env
+        required: false
     environment:
-      DATABASE_URL: postgres://tracker:tracker@postgres:5432/tracker?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-tracker}:${POSTGRES_PASSWORD:-tracker}@postgres:5432/${POSTGRES_DB:-tracker}?sslmode=disable
       ENV: production
-      # Демо идёт по http://localhost — с Secure cookie браузер её не поставит.
-      COOKIE_SECURE: "false"
+      # HTTPS терминирует Caddy спереди: браузер видит secure origin, cookie может быть Secure.
+      COOKIE_SECURE: "true"
+    # Публикуем на 127.0.0.1: снаружи доступен лишь через Caddy (80/443).
+    # TRACKER_API_HOST=0.0.0.0 — открыть API напрямую (только без Caddy, например на http-демо).
+    # TRACKER_HTTP_PORT / TRACKER_HTTPS_PORT — порты Caddy, если 80/443 заняты панелью провайдера.
     ports:
-      - "8080:8080"
+      - "${TRACKER_API_HOST:-127.0.0.1}:${TRACKER_API_PORT:-8080}:8080"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: tracker-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+    # TRACKER_DOMAIN — домен для TLS. По умолчанию localhost (локальная проверка без DNS).
+    environment:
+      TRACKER_DOMAIN: ${TRACKER_DOMAIN:-localhost}
+    ports:
+      - "${TRACKER_HTTP_PORT:-80}:80"
+      - "${TRACKER_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

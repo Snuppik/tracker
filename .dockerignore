@@ -1,0 +1,31 @@
+# Секреты и локальное окружение — никогда не попадают в build-контекст.
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Данные базы (если кто-то смонтировал каталог внутрь проекта).
+pgdata/
+
+# Артефакты сборки и служебное.
+.git
+.gitignore
+.gitattributes
+bin/
+coverage.out
+*.test
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Документация и контракт — не нужны в образе (бинарик уже содержит web/ и db/).
+docs/
+api/
+README.md
+AGENTS.md
+Makefile
+docker-compose.yml
+Caddyfile
+.dockerignore
