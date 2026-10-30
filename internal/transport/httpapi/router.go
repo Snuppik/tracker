@@ -2,36 +2,52 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"net/http"
 
 	"tracker/internal/auth"
 	"tracker/internal/config"
+	"tracker/internal/insights"
 	"tracker/internal/service"
 )
 
 // Server держит зависимости хендлеров. Никакого SQL и бизнес-правил здесь нет.
 type Server struct {
-	cfg    *config.Config
-	log    *slog.Logger
-	db     *sql.DB
-	tokens *auth.TokenManager
-	auth   *service.AuthService
-	tasks  *service.TaskService
-	static http.Handler
+	cfg           *config.Config
+	log           *slog.Logger
+	db            *sql.DB
+	tokens        *auth.TokenManager
+	auth          *service.AuthService
+	tasks         *service.TaskService
+	reminders     *service.ReminderService
+	notifications *service.NotificationService
+	push          *service.PushService
+	stats         *service.StatsService
+	insights      func(ctx context.Context, userID string) (*insights.List, error)
+	static        http.Handler
 }
 
 // NewServer собирает транспортный слой.
-func NewServer(cfg *config.Config, log *slog.Logger, db *sql.DB,
-	tokens *auth.TokenManager, authSvc *service.AuthService, taskSvc *service.TaskService) *Server {
+func NewServer(cfg *config.Config, log *slog.Logger, db *sql.DB, tokens *auth.TokenManager,
+	authSvc *service.AuthService, taskSvc *service.TaskService,
+	reminderSvc *service.ReminderService, notificationSvc *service.NotificationService,
+	pushSvc *service.PushService, statsSvc *service.StatsService) *Server {
 	return &Server{
-		cfg:    cfg,
-		log:    log,
-		db:     db,
-		tokens: tokens,
-		auth:   authSvc,
-		tasks:  taskSvc,
+		cfg:           cfg,
+		log:           log,
+		db:            db,
+		tokens:        tokens,
+		auth:          authSvc,
+		tasks:         taskSvc,
+		reminders:     reminderSvc,
+		notifications: notificationSvc,
+		push:          pushSvc,
+		stats:         statsSvc,
+		insights: func(ctx context.Context, userID string) (*insights.List, error) {
+			return insights.Collect(ctx, db, userID)
+		},
 		static: newStaticHandler(),
 	}
 }
@@ -61,6 +77,21 @@ func (s *Server) routes() http.Handler {
 	protected.HandleFunc("PATCH /api/tasks/{id}", s.handlePatchTask)
 	protected.HandleFunc("DELETE /api/tasks/{id}", s.handleDeleteTask)
 	protected.HandleFunc("PUT /api/tasks/{id}/status", s.handleChangeStatus)
+
+	protected.HandleFunc("GET /api/tasks/{id}/reminders", s.handleListReminders)
+	protected.HandleFunc("POST /api/tasks/{id}/reminders", s.handleCreateReminder)
+	protected.HandleFunc("DELETE /api/reminders/{id}", s.handleDeleteReminder)
+
+	protected.HandleFunc("GET /api/notifications", s.handleListNotifications)
+	protected.HandleFunc("POST /api/notifications/{id}/read", s.handleMarkRead)
+	protected.HandleFunc("POST /api/notifications/read-all", s.handleMarkAllRead)
+
+	protected.HandleFunc("GET /api/push/public-key", s.handleVapidKey)
+	protected.HandleFunc("PUT /api/push/subscription", s.handlePutPushSubscription)
+	protected.HandleFunc("DELETE /api/push/subscription", s.handleDeletePushSubscription)
+
+	protected.HandleFunc("GET /api/stats", s.handleStats)
+	protected.HandleFunc("GET /api/insights", s.handleInsights)
 
 	mux.Handle("/api/", s.authRequired(protected))
 

@@ -209,6 +209,7 @@ case "/sw.js":
 Библиотека: `github.com/SherClockHolmes/webpush-go`.
 
 ```go
+```go
 import webpush "github.com/SherClockHolmes/webpush-go"
 
 // Options
@@ -217,15 +218,18 @@ opts := &webpush.Options{
     VAPIDPublicKey:  cfg.VAPIDPublic,
     VAPIDPrivateKey: cfg.VAPIDPrivate,
     TTL:             30,                 // секунды хранения у провайдера
-    AuthScheme:      webpush.WebPush,    // Chrome требует "webpush", не "vapid"
 }
 
-// Отправка
-resp, err := webpush.SendNotification([]byte(`{"title":"Task","body":"Message","task_id":"id"}`), subscription, opts)
+// Отправка (с таймаутом 5 с на каждую подписку)
+resp, err := webpush.SendNotificationWithContext(ctx, body, subscription, opts)
 // resp.StatusCode:
 //   200 → OK
 //   404 → подписка не существует (endpoint устарел) → DELETE из БД
 //   410 → подписка удалена навсегда (endpoint устарел) → DELETE из БД
+```
+
+**Про `AuthScheme`:** в `webpush-go v1.4.0` такого поля нет — библиотека всегда подписывает VAPID-заголовок схемой `vapid` и добавляет `Authorization: WebPush ...` к запросу сама. Поле `AuthScheme` существовало в старых версиях; при обновлении библиотеки его не добавлять.
+
 ```
 
 `404/410` — чистим подписку (`DELETE FROM push_subscriptions WHERE endpoint=$1`). **Важно:** не блокировать планировщик на чистке — выполнять параллельно.
@@ -261,7 +265,7 @@ go run ./cmd/genvapid
 | Safari iOS (PWA, добавлен на домашний экран, ≥16.4) | ✅ | Поддержка |
 | Edge / IE | ❌ Edge — push работает (на Chromium), IE — нет | Нет поддержки IE |
 | Firefox Android | ⚠️ Mozilla Push Service | Работает, но задержка может быть 2–5 мин |
-| Firefox Desktop | ✅ | При `AuthScheme` = `webpush` (см. выше) |
+| Firefox Desktop | ✅ | Тот же VAPID-заголовок, что и у Chrome |
 | Chrome Android | ✅ | Быстро, надёжно |
 | Chrome Desktop Linux (без notification-daemon) | ⚠️ | Уведомление не всплывает, `sw.js` `showNotification` вернёт ошибку. Решение: установить `libnotify-bin` и `dunst`/`mako` |
 
@@ -276,7 +280,7 @@ if resp.StatusCode == 404 || resp.StatusCode == 410:
     DELETE FROM push_subscriptions WHERE endpoint = $1
 ```
 
-Если пользователь отозвал разрешение в браузере — подписка «протухает» молча, без `pushsubscriptionchange` event (браузер не шлёт event при отзыве). Поэтому: раз в N дней (например, раз в 24 ч) — `GET /api/push/public-key` обновляет `last_seen_at`. Если `last_seen_at > 30 дней` — подписка помечается неактивной и не рассылается.
+Если пользователь отозвал разрешение в браузере — подписка «протухает» молча, без `pushsubscriptionchange` event (браузер не шлёт event при отзыве). В MVP подписка считается живой, пока `push` не вернёт `404/410`; поле `last_seen_at` обновляется при каждом `PUT /api/push/subscription`. Автоматическая деактивация подписок старше 30 дней **не входит в MVP** — при необходимости это отдельная задача (фоновая чистка), не «улучшение» текущего планировщика.
 
 ## 7. Чек-лист тестирования напоминаний + пуша
 
@@ -298,10 +302,10 @@ if resp.StatusCode == 404 || resp.StatusCode == 410:
 | Симптом | Причина | Решение |
 |---|---|---|
 | `PushManager` не определён | Не secure context | Проверить `location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1'` |
-| Подписка создаётся, пуш не приходит | Неправильный AuthScheme | `webpush.WebPush` для Chrome, `webpush.Vapid` для Firefox |
+| Подписка создаётся, пуш не приходит | Подписка создана с другим публичным VAPID-ключом (ключи меняли после подписки) | Отписаться в браузере и подписаться заново: `PUT /api/push/subscription` перезапишет `p256dh`/`auth` по endpoint |
 | Подписка создаётся, пуш не приходит | VAPID-ключи не совпадают в env и `cmd/genvapid` | Перезапустить API с правильными ключами |
-| Пуш не приходит на Firefox | AuthScheme `webpush` | Firefox требует `AuthScheme: webpush.Vapid` (не `WebPush`) |
-| `sw.js` 404 | Go отдаёт его как статику, но не с `Content-Type: text/javascript` | Проверить `router.go` — явный case для `/sw.js` |
+| Пуш не приходит на Firefox | Firefox требует, чтобы `VAPIDSubject` был валидным `mailto:` или `https:` | Проверить `VAPID_SUBJECT` в env |
+| `sw.js` 404 | Go отдаёт его как статику, но не с `Content-Type: text/javascript` | Проверить `static.go` — явный case для `/sw.js` и `mime.TypeByExtension` |
 | `sw.js` не обновляется | Браузер закэшировал старый SW | `Cache-Control: no-cache` на `/sw.js`, `navigator.serviceWorker.register(..., {updateViaCache: 'imports'})` |
 | Уведомление пришло, но без title | `sw.js` читает `event.data.text()`, а не `.json()` | `event.data.json()` |
 | `Notification.requestPermission` не показывает диалог | Chrome требует user gesture | Вызывать только по клику кнопки «Включить уведомления» |

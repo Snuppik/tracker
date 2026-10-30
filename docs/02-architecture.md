@@ -83,10 +83,10 @@ tracker/
 │   └── schema.sql             // единый идемпотентный DDL (go:embed)
 ├── internal/
 │   ├── config/config.go
-│   ├── model/{task.go,user.go,reminder.go,notification.go,errors.go}
+│   ├── model/{task.go,user.go,reminder.go,push_subscription.go,errors.go}
 │   ├── store/{db.go,users.go,tasks.go,reminders.go,notifications.go,push.go}
-│   ├── service/{auth.go,tasks.go,stats.go,reminders.go,notifications.go,push.go}
-│   ├── auth/{password.go,jwt.go,middleware.go}
+│   ├── service/{auth.go,tasks.go,stats.go,reminders.go,notifications.go}
+│   ├── auth/{password.go,jwt.go,context.go}
 │   ├── insights/insights.go
 │   ├── push/sender.go
 │   ├── scheduler/scheduler.go
@@ -95,13 +95,14 @@ tracker/
 │       ├── middleware.go
 │       ├── response.go
 │       ├── errors.go
+│       ├── static.go
+│       ├── system_handler.go
 │       ├── auth_handler.go
 │       ├── task_handler.go
 │       ├── reminder_handler.go
 │       ├── notification_handler.go
 │       ├── push_handler.go
-│       ├── stats_handler.go
-│       └── insights_handler.go
+│       └── analytics_handler.go
 ├── web/                       // статика, отдаётся Go-процессом
 │   ├── login.html
 │   ├── index.html
@@ -146,13 +147,18 @@ for {
         return                       // graceful shutdown
     case <-ticker.C:
         due, err := store.FetchDueReminders(ctx, time.Now().UTC(), batchSize=50)
-        // 1) status='pending' AND fire_at <= now — выбираем с FOR UPDATE SKIP LOCKED
-        // 2) для каждого: создаём notification, отправляем push всем подпискам пользователя
+        // 1) status='pending' AND fire_at <= now — выбираем по одному с FOR UPDATE SKIP LOCKED
+        // 2) для каждого: создаём notification, после коммита отправляем push всем подпискам пользователя
         // 3) fire_at старше REMINDER_GRACE_MINUTES → status='expired' (не спамим после простоя)
-        // 4) успех → status='sent', sent_at=now; ошибка push → attempts++, при attempts>=3 → 'failed'
+        // 4) успех → status='sent', sent_at=now
     }
 }
 ```
+
+**Повторы не реализованы (осознанно, MVP).** Одна попытка на напоминание: in-app запись создаётся
+в той же транзакции и не зависит от push, поэтому сбой push не влияет на доставку. `attempts` в схеме
+остаётся для будущего retry, но код его не инкрементирует; `status='failed'` сейчас не выставляется.
+Подписки, вернувшие `404/410`, удаляются, остальные ошибки логируются как `WARN`.
 
 Три обязательных правила реализации (иначе баги, характерные именно для Go 1.27):
 

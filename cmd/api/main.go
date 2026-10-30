@@ -14,6 +14,8 @@ import (
 	"tracker/db"
 	"tracker/internal/auth"
 	"tracker/internal/config"
+	"tracker/internal/push"
+	"tracker/internal/scheduler"
 	"tracker/internal/service"
 	"tracker/internal/store"
 	"tracker/internal/transport/httpapi"
@@ -51,8 +53,23 @@ func run() error {
 	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTExpiry)
 	authSvc := service.NewAuthService(store.NewUserStore(conn), tokens)
 	taskSvc := service.NewTaskService(conn)
+	reminderSvc := service.NewReminderService(conn)
+	notificationSvc := service.NewNotificationService(conn)
+	statsSvc := service.NewStatsService(conn)
 
-	server := httpapi.NewServer(cfg, logger, conn, tokens, authSvc, taskSvc)
+	sender := push.New(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject)
+	if !sender.Enabled() {
+		logger.Warn("web push отключён: VAPID-ключи не заданы, работает только in-app лента")
+	}
+	pushSvc := service.NewPushService(conn, sender.PublicKey(), sender.Enabled())
+
+	sched := scheduler.New(conn, logger, sender, cfg.ReminderTick, cfg.ReminderGrace)
+	schedulerCtx, stopScheduler := context.WithCancel(ctx)
+	defer stopScheduler()
+	go sched.Run(schedulerCtx)
+
+	server := httpapi.NewServer(cfg, logger, conn, tokens, authSvc, taskSvc,
+		reminderSvc, notificationSvc, pushSvc, statsSvc)
 	httpServer := &http.Server{
 		Addr:              cfg.Addr(),
 		Handler:           server.Handler(),

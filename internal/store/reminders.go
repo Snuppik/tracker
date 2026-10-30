@@ -20,6 +20,43 @@ func NewReminderStore(db DBTX) *ReminderStore {
 
 const reminderColumns = `id, task_id, user_id, fire_at, message, status, attempts, sent_at, created_at`
 
+// Create вставляет напоминание.
+func (s *ReminderStore) Create(ctx context.Context, r *model.Reminder) error {
+	const query = `
+		INSERT INTO reminders (id, task_id, user_id, fire_at, message, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, 'pending', $6)`
+
+	_, err := s.db.ExecContext(ctx, query, r.ID, r.TaskID, r.UserID, r.FireAt, r.Message, r.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("вставка напоминания: %w", err)
+	}
+	return nil
+}
+
+// Delete удаляет напоминание пользователя. Нет строки → model.ErrNotFound.
+func (s *ReminderStore) Delete(ctx context.Context, userID, id string) error {
+	const query = `DELETE FROM reminders WHERE id = $1 AND user_id = $2`
+
+	res, err := s.db.ExecContext(ctx, query, id, userID)
+	if err != nil {
+		return fmt.Errorf("удаление напоминания: %w", err)
+	}
+	return requireAffected(res)
+}
+
+// CountPending считает активные (pending) напоминания задачи.
+func (s *ReminderStore) CountPending(ctx context.Context, userID, taskID string) (int, error) {
+	const query = `
+		SELECT count(*) FROM reminders
+		WHERE task_id = $1 AND user_id = $2 AND status = 'pending'`
+
+	var count int
+	if err := s.db.QueryRowContext(ctx, query, taskID, userID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("подсчёт напоминаний: %w", err)
+	}
+	return count, nil
+}
+
 // ListByTask возвращает напоминания задачи пользователя в порядке fire_at.
 func (s *ReminderStore) ListByTask(ctx context.Context, userID, taskID string) ([]model.Reminder, error) {
 	query := `SELECT ` + reminderColumns + `

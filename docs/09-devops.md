@@ -216,13 +216,21 @@ docker compose up -d --build
 Полезные команды:
 
 ```bash
+```bash
 make reset-db          # docker compose down -v && docker compose up -d postgres
+make test-db           # создать пустую БД tracker_test (один раз; тесты её не удаляют)
 make run               # go run ./cmd/api
 make test              # go test ./... -count=1
 make lint              # gofmt -l . && go vet ./...
 make cover             # go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out
 make logs              # docker compose logs -f api
 make psql              # docker compose exec postgres psql -U tracker -d tracker
+```
+
+Тесты ходят в отдельную БД `tracker_test` (`TEST_DATABASE_URL`, по умолчанию
+`postgres://tracker:tracker@localhost:5432/tracker_test?sslmode=disable`) и применяют к ней
+`db/schema.sql` при старте. Пакеты тестов выполняются параллельно на одной БД, поэтому каждый
+пакет чистит только свои данные (пользователи с собственным доменом email), а не делает `TRUNCATE`.
 ```
 
 Отладка БД:
@@ -236,7 +244,7 @@ tracker=# SELECT id, fire_at, status, attempts FROM reminders ORDER BY fire_at D
 ## 10. Makefile (эталон)
 
 ```makefile
-.PHONY: run build test lint cover reset-db logs psql genvapid demo
+.PHONY: run build test lint cover reset-db test-db logs psql genvapid demo
 
 run:        ; go run ./cmd/api
 build:      ; CGO_ENABLED=0 go build -o bin/tracker ./cmd/api
@@ -244,6 +252,7 @@ test:       ; go test ./... -count=1
 lint:       ; test -z "$$(gofmt -l .)" || (gofmt -l . && exit 1); go vet ./...
 cover:      ; go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out
 reset-db:   ; docker compose down -v && docker compose up -d postgres
+test-db:    ; docker compose exec -T postgres psql -U tracker -d tracker -c "CREATE DATABASE tracker_test" || true
 logs:       ; docker compose logs -f api
 psql:       ; docker compose exec postgres psql -U tracker -d tracker
 genvapid:   ; go run ./cmd/genvapid
